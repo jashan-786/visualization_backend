@@ -22,7 +22,7 @@ const autheticateMiddlware = (
     }
 
     req.body.userId = decoded.userId as JwtPayload;
-
+    req.body.userName= decoded.userName as JwtPayload;
     next();
   } catch (error) {
     res.status(401).json({ message: "unauthorized" });
