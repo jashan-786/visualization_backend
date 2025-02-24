@@ -15,6 +15,7 @@ const connectionSchema = new Schema({
   
   email: { type: String, required: true },
   username: { type: String, required: true },
+  description: { type: String, required: false },
   connections: [
     {
       id: {
