@@ -15,16 +15,18 @@ app.use(bodyParser.json());
 app.use(cors());
 connectdb();
 
-function toGraphData(connections: any, currentNode: any, name: any): any {
+function toGraphData(connections: any, currentNode: any, description:any , name: any ,email: string, phoneNumber: string,  entityType?: string ): any {
+
+  console.log("CurrendtNode", currentNode.toString());
+  console.log("Connections");
+  console.log(connections);
   if (!currentNode || !connections) {
     return { nodes: [], edges: [] };
   }
 
   const nodes: any = [];
   const edges: any = [];
-
-  // Find the connection type for the current node
-  const nodeConnection = connections.find((conn: any) => conn.id === currentNode)?.connection;
+  
 
   // Add the current node
   nodes.push({
@@ -33,26 +35,37 @@ function toGraphData(connections: any, currentNode: any, name: any): any {
     x: Math.random() * 10,
     y: Math.random() * 10,
     size: 20,
-    color: nodeConnection === "Workplace"  ? "blue" : "red",
-    description: "hello"
+    
+    color: entityType === "Workplace"  ? "blue" : "red",
+    description:  description,
+    email: email,
+    phoneNumber: phoneNumber
+    
   });
 
+  
   // Add connected nodes and their edges
   connections.forEach((connection: any) => {
-    if (!connection?.id) return; // Skip invalid connections
+
+    
+    if (!connection?.connectionId?._id) return; // Skip invalid connections
 
     nodes.push({
-      id: connection.id,
-      label: connection.name || 'Unknown',
+      id: connection.connectionId._id,
+      label: connection.connectionId.username ,
       x: Math.random() * 10,
       y: Math.random() * 10,
       size: 20,
-      color: connection.connection === "Workplace" ? "blue" : "red",
-      description: connection.description
+       color:  connection.connectionId.entityType === "Workplace"  ? "blue" : "red",
+      description: connection.connectionId.description,
+      email: connection.connectionId.email,
+      phoneNumber: connection.connectionId.phoneNumber
+
     });
+    
     edges.push({ 
       source: currentNode,
-      target: connection.id, 
+      target: connection.connectionId._id, 
       label: connection.connection || '', 
       color: "gray" 
     });
@@ -135,15 +148,15 @@ app.post(
 
           // Find or create main user atomically
           let mainUser = await ConnectionModel.findOneAndUpdate(
-            { email: connect.mainUserEmail },
-            { $setOnInsert: { email: connect.mainUserEmail, username: connect.mainUserName } },
+            { phoneNumber: connect.mainPhone },
+            { $setOnInsert: { phoneNumber: connect.mainPhone, email: connect.mainUserEmail, username: connect.mainUserName, entityType: connect.entityType } },
             { new: true, upsert: true }
           );
 
           // Find or create connected user atomically
           let conUser = await ConnectionModel.findOneAndUpdate(
-            { email: connect.conUserEmail },
-            { $setOnInsert: { email: connect.conUserEmail, username: connect.conUserName } },
+            { phoneNumber: connect.conPhone },
+            { $setOnInsert: { phoneNumber: connect.conPhone, email: connect.conUserEmail, username: connect.conUserName } },
             { new: true, upsert: true }
           );
 
@@ -152,7 +165,7 @@ app.post(
 
           // First check if the connection already exists, update if found
           let updatedUser1 = await ConnectionModel.findOneAndUpdate(
-            { _id: id, "connections.id": mainUser._id },
+            { _id: id, "connections.connectionId": mainUser._id },
             { $set: { "connections.$.connection": connect.connection } },
             { new: true, runValidators: true }
           );
@@ -163,8 +176,10 @@ app.post(
           if (!updatedUser1) {
             updatedUser1 = await ConnectionModel.findByIdAndUpdate(
               id,
-              { $push: { connections: { id: mainUser._id, name: mainUser.username, connection: connect.connection } } },
-              { new: true, runValidators: true }
+              // { $push: { connections: { _id: mainUser._id, name: mainUser.username, connection: connect.connection } } },
+              { $push: { connections: { connectionId: mainUser._id, connection: connect.connection } } },
+              
+               { new: true, runValidators: true }
             );
           }
 
@@ -172,7 +187,7 @@ app.post(
 
           // Check if the second user has the connection
           let updatedUser2 = await ConnectionModel.findOneAndUpdate(
-            { _id: mainUser._id, "connections.id": id },
+            { _id: mainUser._id, "connections.connectionId": id },
             { $set: { "connections.$.connection": connect.connection } },
             { new: true, runValidators: true }
           );
@@ -184,8 +199,10 @@ app.post(
           if (!updatedUser2) {
             updatedUser2 = await ConnectionModel.findByIdAndUpdate(
               mainUser._id,
-              { $push: { connections: { id: id, name: conUser.username, connection: connect.connection } } },
-              { new: true, runValidators: true }
+            //  { $push: { connections: { _id: id, name: conUser.username, connection: connect.connection } } },
+            { $push: { connections: { connectionId: id,  connection: connect.connection } } },
+             
+            { new: true, runValidators: true }
             );
           }
 
@@ -200,12 +217,12 @@ app.post(
     }
   }
 );
-
+// not used too much
 // get connections of a current user
 app.get("/api/v1/connections", autheticateMiddlware, async (req, res): Promise<any> => {
     try {
         const users = await ConnectionModel.find()
-            .populate("connections", "name connection" ) 
+            .populate("connections", "username email description enityType phoneNumber" ) 
             .lean(); // Use lean() for better performance when you only need JSON data
 
         if (!users?.length) {
@@ -218,7 +235,7 @@ app.get("/api/v1/connections", autheticateMiddlware, async (req, res): Promise<a
             return acc; // Skip this iteration if username is null
           }
           
-          const { nodes, edges } = toGraphData(user.connections, user._id, user.username);
+          const { nodes, edges } = toGraphData(user.connections, user._id, user.description, user.username , user.email, user.phoneNumber, user.entityType as string);
           
           // Use Set to ensure unique nodes and edges
           const uniqueNodes = new Set([...acc.nodes, ...nodes]);
@@ -282,15 +299,16 @@ app.get(
         return res.status(400).json({ message: "id is not a valid object id" });
       }
       const user = await ConnectionModel.findOne({ _id: id }).populate(
-        "connections"
+        "connections.connectionId" , "username email description entityType phoneNumber" 
       );
+
       console.log("user")
       console.log(user)
       console.log(user);
       if (user == null || user.connections == null) {
         return res.status(404).json({ connections: [] });
       } else {
-        const { nodes, edges } = toGraphData(user.connections, user.id, user.username);
+        const { nodes, edges } = toGraphData(user.connections, user.id,  user.description , user.username, user.email, user.phoneNumber, user.entityType as string);
         return res.status(200).json({ data: { nodes, edges } });
       }
     }
@@ -301,12 +319,13 @@ app.get(
   "/api/v1/search",
   autheticateMiddlware,
   async (req, res): Promise<any> => {
-     const { name, email } = req.query;
+     const { name, email , phoneNumber} = req.query;
 
      console.log(name, email)
 
-     if(name ==  "" && email == ""){
-      const users = await ConnectionModel.find().populate("connections");
+     if(name ==  "" && email == "" && phoneNumber == ""){
+
+      const users = await ConnectionModel.find().populate("connections.connectionId" , "username email description entityType phoneNumber").lean();
       const output = {
         nodes: [] as any[],
         edges: [] as any []
@@ -314,7 +333,9 @@ app.get(
       console.log("users")
       console.log(users)
       users.forEach((user) => {
-        let data = toGraphData(user.connections, user.id , user.username)
+        console.log("Connections")
+        console.log(user.connections) 
+        let data = toGraphData(user.connections, user._id , user.description , user.username, user.email, user.phoneNumber, user.entityType as string)
           let nodes=data.nodes
            
            let edges = data.edges
@@ -331,33 +352,35 @@ app.get(
     const userData = await ConnectionModel.findOne({
       $and: [
         { username: { $regex: name, $options: "i" } },
-        { email: { $regex: email, $options: "i" } }
+        { email: { $regex: email, $options: "i" } },
+        { phoneNumber: { $regex: phoneNumber, $options: "i" } },
       ]
-    });
+    }).populate("connections.connectionId" , "username email description entityType phoneNumber").lean();
       
  
     console.log(userData);
     if (userData == null || userData?.connections == null) {
       return res.status(404).json({ connections: [] });
     } else {
-      const data =      toGraphData(userData.connections, userData._id , userData.username)
+      const data =      toGraphData(userData.connections, userData._id , userData.description , userData.username , userData.email, userData.phoneNumber, userData.entityType as string);
       return res.status(200).json({ data });
     }
   }
 );
 
+// add user
 app.post("/api/v1/addUser", autheticateMiddlware, async (req: Request, res: Response): Promise<any> => {
-  const {  email, username, description } = req.body;
-  console.log( email, username, description)
+  const {  email, username, description, entityType, phoneNumber } = req.body;
+  console.log( email, username, description, entityType, phoneNumber);
 
   try{
-  const user1 = await ConnectionModel.findOne({ email});
+  const user1 = await ConnectionModel.findOne({ phoneNumber});
   if(user1){
     console.log("user already exists")
-      return res.status(201).json({ message: "user already exists" });
+      return res.status(200).json({ message: "user already exists" });
 
   }
-  const user = await ConnectionModel.create({ email, username, description });
+  const user = await ConnectionModel.create({ email, username, description, entityType , phoneNumber });
   return res.status(201).json({ user });
 }
 catch(error){
@@ -365,12 +388,15 @@ catch(error){
 }
 })
 
+// update user
 app.post("/api/v1/updateUser", autheticateMiddlware, async (req: Request, res: Response): Promise<any> => {
-  const { prevEmail, email, username, description } = req.body;
-  console.log(prevEmail, email, username, description);
+
+  const { prevPhone, newPhone, email, username, description, entityType } =req.body;
+
+  console.log(prevPhone, newPhone, email, username, description, entityType);
   try {
     // Find the user to update
-    const userToUpdate = await ConnectionModel.findOne({ email: prevEmail });
+    const userToUpdate = await ConnectionModel.findOne({ phoneNumber: prevPhone });
     if (!userToUpdate) {
       return res.status(400).json({ message: "user not exists" });
     }
@@ -378,15 +404,10 @@ app.post("/api/v1/updateUser", autheticateMiddlware, async (req: Request, res: R
     // Update the main user
     const updatedUser = await ConnectionModel.findByIdAndUpdate(
       userToUpdate._id, 
-      { email, username, description }, 
+      { phoneNumber: newPhone , email, username, description,entityType }, 
       { new: true }
     );
-
-    // Update this user's name in all other users' connections
-    await ConnectionModel.updateMany(
-      { "connections.id": userToUpdate._id },
-      { $set: { "connections.$.name": username } }
-    );
+    
 
     return res.status(200).json({ user: updatedUser });
   } catch (error) {
@@ -394,6 +415,8 @@ app.post("/api/v1/updateUser", autheticateMiddlware, async (req: Request, res: R
   }
 });
 
+
+// delete user
 app.post("/api/v1/deleteuser", autheticateMiddlware, async (req: Request, res: Response): Promise<any> => {
   const { id } = req.body;
   console.log(id)
