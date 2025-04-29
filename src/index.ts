@@ -1,12 +1,16 @@
 import express, { Request, Response } from "express";
 import bodyParser from "body-parser";
 
-import connectdb from "./db/connection";
+import connectdb, { connectbackupdb } from "./db/connection";
 import { AdminModel, ConnectionModel } from "./db/models";
 import autheticateMiddlware from "./middleware";
 import jwt from "jsonwebtoken";
 import cors from "cors";
-import mongoose, { Connection, Mongoose, ObjectId, Types } from "mongoose";
+import mongoose, { connection, Connection, connections, Mongoose, ObjectId, Types } from "mongoose";
+import cron from "node-cron";
+import dotenv from "dotenv";
+import PDFDocument from "pdfkit";
+import fs from "fs";
 const app = express();
 
 app.use(express.json());
@@ -14,6 +18,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(cors());
 connectdb();
+
+
+//cron for backup
+
+cron.schedule('0 0 * * *', async () => {
+  console.log('Running DB replication...');
+
+  try {
+
+    const admins= await AdminModel.find({});
+    const users= await ConnectionModel.find({});
+
+ const connection= await connectbackupdb()
+ await connection?.BackupAdminModel.deleteMany({});
+ await connection?.BackupAdminModel.insertMany(admins);
+
+ await connection?.BackupConnectionModel.deleteMany({});
+ await connection?.BackupConnectionModel.insertMany(users);
+ console.log("Backup completed successfully");
+
+ await connection?.con.close();
+  } catch (error) {
+    console.error('Error in backup:', error);
+  }
+});
 
 function toGraphData(connections: any, currentNode: any, description:any , name: any ,email: string, phoneNumber: string,  entityType?: string ): any {
 
@@ -35,7 +64,7 @@ function toGraphData(connections: any, currentNode: any, description:any , name:
     x: Math.random() * 10,
     y: Math.random() * 10,
     size: 20,
-    
+    type: entityType,
     color: entityType === "Workplace"  ? "blue" : "red",
     description:  description,
     email: email,
@@ -59,7 +88,8 @@ function toGraphData(connections: any, currentNode: any, description:any , name:
        color:  connection.connectionId.entityType === "Workplace"  ? "blue" : "red",
       description: connection.connectionId.description,
       email: connection.connectionId.email,
-      phoneNumber: connection.connectionId.phoneNumber
+      phoneNumber: connection.connectionId.phoneNumber,
+      type: entityType,
 
     });
     
@@ -368,6 +398,73 @@ app.get(
   }
 );
 
+//route for downloading all connection in one pdf file
+
+app.get("/api/v1/download-connections", autheticateMiddlware, async (req, res): Promise<any> => {
+
+  try{ 
+  const connections= await ConnectionModel.find({}).populate("connections.connectionId" , "username email description entityType phoneNumber")
+ 
+    const doc = new PDFDocument();
+
+    // Set response headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "attachment; filename=connections.pdf");
+
+    // Pipe the PDF into the response
+    doc.pipe(res);
+
+    doc.fontSize(20).text("All Connections", { underline: true });
+    doc.moveDown();
+
+    connections.forEach((conn, idx) => {
+      doc
+        .fontSize(12)
+        .text(`#${idx + 1}`)
+        .text(`Name: ${conn.username}`)
+        .text(`Email: ${conn.email}`)
+        .text(`Phone: ${conn.phoneNumber}`)
+        .text(`Description: ${conn.description || "N/A"}`)
+        .text(`Entity Type: ${conn.entityType || "Normal"}`)
+        .text(`Created At: ${conn.createdAt}`)
+        .moveDown();
+
+
+
+        conn.connections.forEach((connection: any) => {
+          if (connection.connectionId) {
+            doc
+              .fontSize(10)
+              .text(`  - Connected to: ${connection.connectionId.username}`)
+              .text(`    Email: ${connection.connectionId.email}`)
+              .text(`    Phone: ${connection.connectionId.phoneNumber}`)
+              .text(`    Description: ${connection.connectionId.description || "N/A"}`)
+              .text(`    Entity Type: ${connection.connectionId.entityType || "Normal"}`)
+              .moveDown();
+          }
+  
+          doc.moveDown(); 
+        }
+      )
+     
+   // Add some space between connections
+    
+  
+   
+
+  })
+
+  doc.end(); // Finalize PDF
+
+}
+catch(error){
+  console.log(error)
+  return res.status(500).json({ message: "Internal server error", error: (error as any).message });
+
+
+}
+
+})
 // add user
 app.post("/api/v1/addUser", autheticateMiddlware, async (req: Request, res: Response): Promise<any> => {
   const {  email, username, description, entityType, phoneNumber } = req.body;

@@ -2,10 +2,12 @@ import mongoose, { connect, Schema } from "mongoose";
 // degining the user schema
 
 //user schema
-const adminSchema = new Schema({
+export const adminSchema = new Schema({
   username: { type: String, required: true },
   email: { type: String, required: true },
   password: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // username: { type: String, required: true },
@@ -32,7 +34,7 @@ const adminSchema = new Schema({
 // });
 
 
-const connectionSchema = new Schema({
+export const connectionSchema = new Schema({
   phoneNumber: { type: String, required: true },
   email: { type: String, required: true },
   username: { type: String, required: true },
@@ -51,6 +53,10 @@ const connectionSchema = new Schema({
        connection: { type: String, required: false },
     },
   ],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
 });
 
 
