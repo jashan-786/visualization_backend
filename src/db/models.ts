@@ -36,8 +36,8 @@ export const adminSchema = new Schema({
 
 export const connectionSchema = new Schema({
   phoneNumber: { type: String, required: true },
-  email: { type: String, required: true },
-  username: { type: String, required: true },
+  email: { type: String, required: false },
+  username: { type: String, required: false },
   description: { type: String, required: false },
   entityType: { type:String, enum:  ["Normal", "Workplace"], default: "Normal", required: false },
   connections: [

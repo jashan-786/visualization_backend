@@ -19,6 +19,10 @@ app.use(bodyParser.json());
 app.use(cors());
 connectdb();
 
+//:id -> parmas
+//?email -> query
+// :email -> path params
+//
 
 //cron for backup
 
@@ -44,7 +48,7 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
-function toGraphData(connections: any, currentNode: any, description:any , name: any ,email: string, phoneNumber: string,  entityType?: string ): any {
+function toGraphData(connections: any, currentNode: any, description:any , name: any ,email: string | undefined| null, phoneNumber: string ,  entityType?: string ): any {
 
   console.log("CurrendtNode", currentNode.toString());
   console.log("Connections");
@@ -81,7 +85,7 @@ function toGraphData(connections: any, currentNode: any, description:any , name:
 
     nodes.push({
       id: connection.connectionId._id,
-      label: connection.connectionId.username ,
+      label: connection.connectionId.username || 'Unknown too',
       x: Math.random() * 10,
       y: Math.random() * 10,
       size: 20,
@@ -159,6 +163,33 @@ app.post("/api/v1/signin", async (req, res): Promise<any> => {
     console.log(error);
     return res.status(400).json({ message: "user not signed in" });
   }
+});
+
+
+app.get("/api/v1/user-info", autheticateMiddlware, async (req, res): Promise<any> => {
+
+
+  const phoneNumber= req.query.phoneNumber as string;
+  console.log("Phone Number:", phoneNumber);
+
+  if(!phoneNumber || phoneNumber === ""){
+    return res.status(400).json({ message: "Phone number is required" });
+  }
+
+  try{
+   const user= await ConnectionModel.findOne({ phoneNumber }).populate("connections.connectionId", "phoneNumber").lean();
+
+   if(!user){
+     return res.status(404).json({ message: "User not found" , user: [] });
+   }
+    console.log("User Info:", user);
+    return res.status(200).json({ user: [user] });
+
+  }catch(error){
+    console.error("Error fetching user info:", error);
+    return res.status(500).json({ message: "Internal server error", error: (error as any).message });
+  }
+
 });
 
 // adding a connection to a user
@@ -292,6 +323,8 @@ app.get(
   "/api/v1/connections/:email",
   autheticateMiddlware,
   async (req, res): Promise<any> => {
+
+    
     const { email } = req.params;
     console.log(email);
     console.log("hitting here")
@@ -465,6 +498,20 @@ catch(error){
 }
 
 })
+
+app.get("/api/v1/connections-json", autheticateMiddlware, async (req, res) => {
+  try {
+    const connections = await ConnectionModel.find({})
+      .populate("connections.connectionId", "username email description entityType phoneNumber");
+
+    res.status(200).json({ success: true, data: connections });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+
 // add user
 app.post("/api/v1/addUser", autheticateMiddlware, async (req: Request, res: Response): Promise<any> => {
   const {  email, username, description, entityType, phoneNumber } = req.body;
@@ -481,6 +528,7 @@ app.post("/api/v1/addUser", autheticateMiddlware, async (req: Request, res: Resp
   return res.status(201).json({ user });
 }
 catch(error){
+  console.log(error)
   return res.status(500).json({ message: "Internal server error", error: (error as any).message });
 }
 })
@@ -501,7 +549,7 @@ app.post("/api/v1/updateUser", autheticateMiddlware, async (req: Request, res: R
     // Update the main user
     const updatedUser = await ConnectionModel.findByIdAndUpdate(
       userToUpdate._id, 
-      { phoneNumber: newPhone , email, username, description,entityType }, 
+      { phoneNumber: newPhone ? newPhone : userToUpdate.phoneNumber , email, username, description,entityType }, 
       { new: true }
     );
     
